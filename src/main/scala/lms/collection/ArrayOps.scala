@@ -65,7 +65,7 @@ trait ArrayOps extends PrimitiveOps {
 
   class ArrayOps[A:Manifest](x: Rep[Array[A]]) {
     def apply(i: Rep[Int]): Rep[A] = x match {
-      case Wrap(_) => Wrap[A](Adapter.g.reflectRead("array_get", Unwrap(x), Unwrap(i))(Unwrap(x)))
+      case Wrap(_) => Wrap[A](Adapter.g.reflectRead("array_get", Unwrap(x), Unwrap(i))(Adapter.CTRL))
       case EffectView(x, base) => Wrap[A](Adapter.g.reflectRead("array_get", Unwrap(x), Unwrap(i))(Unwrap(base)))
     }
     def update(i: Rep[Int], y: Rep[A]): Unit = x match {
