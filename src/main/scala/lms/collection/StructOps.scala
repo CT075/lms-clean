@@ -29,6 +29,7 @@ trait StructOps extends Base with ArrayOps {
 
   object StructOpsImpl {
     // TODO: add a better constraint on T
+    // TODO: provenance
     def readField[T: RefinedManifest, U: Manifest](p: Rep[T], field: String): Rep[U] =
       Wrap[U](Adapter.g.reflectRead("struct_get", Unwrap(p), Unwrap(field))(Unwrap(p)))
 
@@ -46,8 +47,6 @@ object CStruct_Impl {
       case q"case class $name(..${fields: Seq[ValDef]})" =>
         val manifestName = internal.reificationSupport.freshTermName(name.toString+"Manifest")
         val fieldDecls = fields.map { f => q"""(${f.name.toString}, manifest[${f.tpt}])""" }
-        val fieldsListName = internal.reificationSupport.freshTermName(name.toString+"Fields")
-        val fieldsList = fields.map { f => q"""(${f.name.toString}, ${f.tpt.toString})""" }
         val res = c.Expr(q"""
           case class $name(..$fields)
           implicit val $manifestName = new RefinedManifest[$name] {
@@ -55,51 +54,58 @@ object CStruct_Impl {
             def runtimeClass = classOf[$name]
             override def name = Some(${name.toString})
           }
-          val $fieldsListName = $fieldsList
         """)
         res
     }
   }
 }
 
-object CStruct_Fields {
-  // TODO(cwong): This is gross. We need the class name as a string, and also
-  // the magic name [FooFields] to invoke this macro. Instead, either use
-  // reflection or a nested macro definition to emit this code.
-  def impl(c: Context)(name: c.Expr[String], fields: c.Expr[(String, String)]*) = {
+object CStructFields {
+  import scala.reflect.runtime.universe._
+
+  def impl[T: c.WeakTypeTag](c: Context)(_unit: c.Expr[Unit]): c.Expr[Any] = {
     import c.universe._
 
+    val symbol = weakTypeOf[T].typeSymbol
+    val name = symbol.name
     val opsClassName = internal.reificationSupport.freshTypeName(name.toString+"Ops")
 
-    val p = TermName("p")
+    val getters =
+      weakTypeOf[T].members.collect {
+        case m: MethodSymbol if m.isCaseAccessor => {
+          q"""
+          def ${m.name}: Rep[${m.returnType}] =
+            StructOpsImpl.readField[$symbol, ${m.returnType}](p, ${m.name.toString})
+          """
+        }
+      }.toList
 
-    val getters = fields.map { field =>
-      val (fname_, ty) = field
-      val fname = TermName(fname_)
-      q"""def $fname: Rep[$ty] = StructOpsImpl.readField[$ty]($p, $fname)"""
-    }
-    val setters = fields.map { field =>
-      val (fname, ty) = field
-      val setter = TermName(fname + "_$eq")
-      q"""def $setter(v: Rep[$ty]): Unit = StructOpsImpl.writeField[$ty]($p, $fname, v)"""
-    }
+    val setters =
+      weakTypeOf[T].members.collect {
+        case m: MethodSymbol if m.isCaseAccessor => {
+          val setterName = TermName(m.name + "_$eq")
+          val setter = q"""
+            def $setterName(v: Rep[${m.returnType}]): Unit =
+              StructOpsImpl.writeField[$symbol, ${m.returnType}](p, ${m.name.toString}, v)
+            """
+          setter
+        }
+      }.toList
+
     val res = c.Expr(q"""
-      implicit class $opsClassName($p: Rep[$name]) {
+      implicit class $opsClassName(p: Rep[$symbol]) {
         ..$getters
         ..$setters
       }
     """)
     res
   }
+
+  def fields[T](_unit: Unit): Any = macro impl[T]
 }
 
 class CStruct extends StaticAnnotation {
   def macroTransform(annottees: Any*): Any = macro CStruct_Impl.impl
-}
-
-class CStructFields {
-  def genStructFields(name: String, fields: List[(String, String)]) =
-    macro CStruct_Fields.impl
 }
 
 trait CCodeGenStruct extends ExtendedCCodeGen {
