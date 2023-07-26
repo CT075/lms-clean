@@ -16,25 +16,19 @@ import scala.reflect.macros.whitebox.Context
 import scala.util.matching.Regex
 
 trait StructOps extends Base with ArrayOps {
-  /*
-  class Pointer[T <: Struct:RefinedManifest](val ptr: Rep[LongArray[T]], base: Rep[LongArray[T]]) {
-    def readField[U: Manifest](field: String): Rep[U] =
-      Wrap[U](Adapter.g.reflectRead("reffield_get", Unwrap(ptr), Unwrap(field))(Unwrap(base)))
-    def writeField[U: Manifest](field: String, v: Rep[U]): Unit =
-      Adapter.g.reflectWrite("reffield_set", Unwrap(ptr), Unwrap(field), Unwrap(v))(Unwrap(base))
-    def deref: Rep[T] =
-      Wrap[T](Adapter.g.reflectWrite("deref", Unwrap(ptr))(Adapter.CTRL))
-  }
-  */
-
   object StructOpsImpl {
-    // TODO: add a better constraint on T
-    // TODO: provenance
+    // TODO: do we need a better constraint on T?
     def readField[T: RefinedManifest, U: Manifest](p: Rep[T], field: String): Rep[U] =
-      Wrap[U](Adapter.g.reflectRead("struct_get", Unwrap(p), Unwrap(field))(Unwrap(p)))
+      p match {
+        case Wrap(_, provenance) =>
+          Wrap[U](Adapter.g.reflectRead("struct_get", Unwrap(p), Unwrap(field))(Unwrap(p)), Unwrap(p)::provenance)
+      }
 
     def writeField[T: RefinedManifest, U: Manifest](p: Rep[T], field: String, v: Rep[U]): Unit =
-      Adapter.g.reflectWrite("struct_set", Unwrap(p), Unwrap(field), Unwrap(v))(Unwrap(p))
+      p match {
+        case Wrap(_, provenance) =>
+          Adapter.g.reflectWrite("struct_set", Unwrap(p), Unwrap(field), Unwrap(v))((Unwrap(p)::provenance):_*)
+      }
   }
 }
 

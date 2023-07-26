@@ -29,6 +29,8 @@ class StructTest extends TutorialFunSuite {
         arg
       }
     }
+    // TODO: this output doesn't compile; we need to adjust [convert] to check
+    // for manifest[Complex].
     check("basic_struct", driver.code, "c")
   }
 }
