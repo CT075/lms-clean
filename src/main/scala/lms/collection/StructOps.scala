@@ -60,52 +60,48 @@ object CStruct_Impl {
   }
 }
 
-object CStructFields {
+object CStructOps_Impl {
   import scala.reflect.runtime.universe._
 
-  def impl[T: c.WeakTypeTag](c: Context)(_unit: c.Expr[Unit]): c.Expr[Any] = {
+  def impl(c: Context)(annottees: c.Expr[Any]*): c.Expr[Any] = {
     import c.universe._
 
-    val symbol = weakTypeOf[T].typeSymbol
-    val name = symbol.name
-    val opsClassName = internal.reificationSupport.freshTypeName(name.toString+"Ops")
+    val List(a) = annottees
 
-    val getters =
-      weakTypeOf[T].members.collect {
-        case m: MethodSymbol if m.isCaseAccessor => {
-          q"""
-          def ${m.name}: Rep[${m.returnType}] =
-            StructOpsImpl.readField[$symbol, ${m.returnType}](p, ${m.name.toString})
-          """
+    a.tree match {
+      // It really sucks to have to reproduce all the fields. In theory, we
+      // could use reflection to pick up the fields by hand, but it leads to
+      // some extremely messy issues with compiler internals.
+      case q"abstract class $opsClassName[$cls](..${fields: Seq[ValDef]})" => {
+        val name = cls.name
+        val getters = fields.map { f =>
+          q"""def ${f.name}: Rep[${f.tpt}] =
+            StructOpsImpl.readField[$name, ${f.tpt}](p, ${f.name.toString})"""
         }
-      }.toList
-
-    val setters =
-      weakTypeOf[T].members.collect {
-        case m: MethodSymbol if m.isCaseAccessor => {
-          val setterName = TermName(m.name + "_$eq")
-          val setter = q"""
-            def $setterName(v: Rep[${m.returnType}]): Unit =
-              StructOpsImpl.writeField[$symbol, ${m.returnType}](p, ${m.name.toString}, v)
-            """
-          setter
+        val setters = fields.map { f =>
+          val setter = TermName(f.name + "_$eq")
+          q"""def $setter(v: Rep[${f.tpt}]): Unit =
+            StructOpsImpl.writeField[$name, ${f.tpt}](p, ${f.name.toString}, v)"""
         }
-      }.toList
+        val res = c.Expr(q"""
+          implicit class $opsClassName(p: Rep[$name]) {
+            ..$getters
+            ..$setters
+          }
+        """)
 
-    val res = c.Expr(q"""
-      implicit class $opsClassName(p: Rep[$symbol]) {
-        ..$getters
-        ..$setters
+        res
       }
-    """)
-    res
+    }
   }
-
-  def fields[T](_unit: Unit): Any = macro impl[T]
 }
 
 class CStruct extends StaticAnnotation {
   def macroTransform(annottees: Any*): Any = macro CStruct_Impl.impl
+}
+
+class CStructOps extends StaticAnnotation {
+  def macroTransform(annottees: Any*): Any = macro CStructOps_Impl.impl
 }
 
 trait CCodeGenStruct extends ExtendedCCodeGen {
@@ -113,6 +109,9 @@ trait CCodeGenStruct extends ExtendedCCodeGen {
     case n @ Node(s, "reffield_set", List(ptr, Const(field: String), v), _) =>
       shallowP(ptr, precedence("reffield_get"))
       esln"->$field = $v;"
+    case n @ Node(s, "struct_set", List(ptr, Const(field: String), v), _) =>
+      shallowP(ptr, precedence("struct_get"))
+      esln".$field = $v;"
     case n @ Node(s, "local_struct", Nil, _) =>
       val tpe = remap(typeMap.getOrElse(s, manifest[Unknown]))
       emitln(s"$tpe ${quote(s)} = { 0 };") // FIXME: uninitialized? or add it as argument?
@@ -124,6 +123,8 @@ trait CCodeGenStruct extends ExtendedCCodeGen {
       emit("&"); shallowP(v, precedence("ref_new"))
     case n @ Node(s, "reffield_get", List(ptr, Const(field: String)), _) =>
       shallowP(ptr, precedence("reffield_get")); emit("->"); emit(field)
+    case n @ Node(s, "struct_get", List(ptr, Const(field: String)), _) =>
+      shallowP(ptr, precedence("struct_get")); emit("."); emit(field)
     case n @ Node(s, "deref", List(ptr), _) =>
       es"*$ptr"
     case _ => super.shallow(n)

@@ -11,15 +11,10 @@ struct Complex {
   double image;
 };
 /**************** Snippet ****************/
-double Snippet(int x0) {
-  struct Complex x1 = { 0 };
-  struct Complex* x2 = &x1;
-  x2->real = 1.23;
-  x2->image = 2.34;
-  struct Complex x3[1] = { *x2 };
-  struct Complex x4[1] = { *x3 };
-  x4->real = 10.0;
-  return x4->real + x2->image;
+struct Complex Snippet(struct Complex x0) {
+  x0.real = 1.23;
+  x0.image = x0.real;
+  return x0;
 }
 /*****************************************
 End of C Generated Code
@@ -29,6 +24,6 @@ int main(int argc, char *argv[]) {
     printf("usage: %s <arg>\n", argv[0]);
     return 0;
   }
-  Snippet(atoi(argv[1]));
+  Snippet();
   return 0;
 }

@@ -19,14 +19,15 @@ class StructTest extends TutorialFunSuite {
         val IR: q.type = q
       }
 
-      CStructFields.fields[Complex](())
+      @CStructOps
+      abstract class ComplexOps[Complex](real: Double, image: Double)
 
       /*
       implicit class ComplexOps(p: Rep[Complex]) {
         def real: Rep[Double] = StructOpsImpl.readField[Complex, Double](p, "real")
         def image: Rep[Double] = StructOpsImpl.readField[Complex, Double](p, "image")
         def real_=(v: Rep[Double]): Unit = StructOpsImpl.writeField[Complex, Double](p, "real", v)
-        def image_=(v: Rep[Double]): Unit = StructOpsImpl.writeField[Complex, Double](p, "image", v)
+        def image_=(v: Rep[Double]): Unit = StructOpsImpl.writeField[Complex, Double](p, "real", v)
       }
       */
 
