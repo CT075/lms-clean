@@ -1,25 +1,15 @@
-# LMS Koika
+# lms-clean
 
-An early experiment.
+![Scala CI](https://github.com/TiarkRompf/lms-clean/workflows/Scala%20CI/badge.svg?branch=master)
 
-## Run
-- `sbt test`
+![Image](https://67.media.tumblr.com/fff976b92c98b0977dcfb89119474165/tumblr_o5n9x9lnkV1ugyavxo1_500.jpg)
 
-## Troubleshoot
-- It works in Java v1.8. In Mac OS X: `export JAVA_HOME=$(/usr/libexec/java_home -v1.8)`
+“The allure of a full rewrite”
 
-# Contributing
+Viktor Oliva
 
-see [HACKING.md](HACKING.md)
+Oil on canvas
 
-# [LMS Clean](https://github.com/TiarkRompf/lms-clean)
+c 1901-1903
 
-## Optimizations
-
-The [`rewrite` method of `GraphBuilderOpt` in the LMS Backend](https://github.com/TiarkRompf/lms-clean/blob/master/src/main/scala/lms/core/backend.scala#L524) has the "smart constructor" optimizations that, for example, optimizes read after write for arrays and variables.
-
-The [`GraphBuilderOpt` is linked through the `Adapter` object in the LMS Frontend](https://github.com/TiarkRompf/lms-clean/blob/master/src/main/scala/lms/core/stub.scala#L22). Because the linking is through an object as opposed to a trait, it's not easy to change -- so for now, we will experiment with more optimizations by changing LMS Clean directly.
-
-# [Bounded Model Checking](https://www.cprover.org/cbmc/) (also see [newer releases](https://github.com/diffblue/cbmc) and [doc](http://www.cprover.org/cprover-manual/))
-- cd `src/out`
-- `cbmc --compact-trace interpcc_2sct_alt.check.c`
+(from http://classicprogrammerpaintings.com/)

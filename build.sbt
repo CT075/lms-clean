@@ -1,28 +1,36 @@
-name := "lms-koika"
+name := "lms-clean"
+
+organization := "org.scala-lang.virtualized"
+
+version := "0.0.1-SNAPSHOT"
 
 scalaVersion := "2.12.8"
 
+val paradiseVersion = "2.1.0"
+
+//crossScalaVersions := Seq("2.12.1")
+
 resolvers += Resolver.sonatypeRepo("snapshots")
 
-libraryDependencies += "org.scalatest" % "scalatest_2.12" % "3.0.4"
+resolvers += Resolver.sonatypeRepo("releases")
 
-libraryDependencies += "org.scala-lang" % "scala-compiler" % scalaVersion.value % "compile"
+libraryDependencies ++= Seq(
+  "org.scalatest" %% "scalatest" % "3.0.1" % "test"
+)
 
-libraryDependencies += "org.scala-lang" % "scala-library" % scalaVersion.value % "compile"
+libraryDependencies += ("org.scala-lang" % "scala-reflect" % scalaVersion.value)
 
-libraryDependencies += "org.scala-lang" % "scala-reflect" % scalaVersion.value % "compile"
-
-autoCompilerPlugins := true
-
-val paradiseVersion = "2.1.0"
+libraryDependencies += ("org.scala-lang" % "scala-compiler" % scalaVersion.value % "compile")
 
 addCompilerPlugin("org.scalamacros" % "paradise" % paradiseVersion cross CrossVersion.full)
 
+addCompilerPlugin("org.scala-lang.plugins" % "scala-continuations-plugin_2.12.0" % "1.0.3")
+
+libraryDependencies += "org.scala-lang.plugins" % "scala-continuations-library_2.12" % "1.0.3"
+
+scalacOptions += "-P:continuations:enable"
+
+// --- testing ---
+
 // tests are not thread safe
 parallelExecution in Test := false
-
-lazy val koika = (project in file(".")).dependsOn(lms % "test->test")
-  // .settings(fork := true)
-
-lazy val lms = (project in file("vendor/lms-clean"))
-  // .settings(fork := true)
