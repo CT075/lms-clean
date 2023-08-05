@@ -16,28 +16,19 @@ import scala.reflect.macros.whitebox.Context
 import scala.util.matching.Regex
 
 trait StructOps extends Base with ArrayOps {
-  abstract class Struct
+  object StructOpsImpl {
+    // TODO: do we need a better constraint on T?
+    def readField[T: RefinedManifest, U: Manifest](p: Rep[T], field: String): Rep[U] =
+      p match {
+        case Wrap(_, provenance) =>
+          Wrap[U](Adapter.g.reflectRead("struct_get", Unwrap(p), Unwrap(field))(Unwrap(p)), Unwrap(p)::provenance)
+      }
 
-  class Pointer[T <: Struct:RefinedManifest](val ptr: Rep[LongArray[T]], base: Rep[LongArray[T]]) {
-    def readField[U: Manifest](field: String): Rep[U] =
-      Wrap[U](Adapter.g.reflectRead("reffield_get", Unwrap(ptr), Unwrap(field))(Unwrap(base)))
-    def writeField[U: Manifest](field: String, v: Rep[U]): Unit =
-      Adapter.g.reflectWrite("reffield_set", Unwrap(ptr), Unwrap(field), Unwrap(v))(Unwrap(base))
-    def deref: Rep[T] =
-      Wrap[T](Adapter.g.reflectWrite("deref", Unwrap(ptr))(Adapter.CTRL))
-  }
-
-  object Pointer {
-    def apply[T <: Struct:RefinedManifest](v: Rep[T]): Pointer[T] = Pointer(LongArray[T](v))
-    def apply[T <: Struct:RefinedManifest](arr: Rep[LongArray[T]], idx: Rep[Long] = 0L) = arr match {
-      // TODO(cwong): How to handle provenance?
-      case Wrap(_, _) => new Pointer(arr.slice(idx), arr)
-    }
-    def local[T <: Struct:RefinedManifest] = {
-      val struct = Wrap[T](Adapter.g.reflectMutable("local_struct"))
-      val ptr = Wrap[LongArray[T]](Adapter.g.reflectEffect("ref_new", Unwrap(struct))(Unwrap(struct), Adapter.STORE)()) // FIXME: Write? Or different?
-      new Pointer[T](ptr, ptr)
-    }
+    def writeField[T: RefinedManifest, U: Manifest](p: Rep[T], field: String, v: Rep[U]): Unit =
+      p match {
+        case Wrap(_, provenance) =>
+          Adapter.g.reflectWrite("struct_set", Unwrap(p), Unwrap(field), Unwrap(v))((Unwrap(p)::provenance):_*)
+      }
   }
 }
 
@@ -45,30 +36,37 @@ object CStruct_Impl {
   def impl(c: Context)(annottees: c.Expr[Any]*): c.Expr[Any] = {
     import c.universe._
 
-    println("CStruct_Impl")
     val List(a) = annottees
     a.tree match {
       case q"case class $name(..${fields: Seq[ValDef]})" =>
         val manifestName = internal.reificationSupport.freshTermName(name.toString+"Manifest")
+        // XXX cwong: This can't be fresh, because we need it to have a predictable name
+        // (so the end-user can actually use it). Of course, that runs the risk of actually
+        // shadowing something. What to do...?
+        val opsTraitName = TypeName(name.toString+"Ops")
+        val accessorClassName = internal.reificationSupport.freshTypeName(name.toString+"Accessors")
         val fieldDecls = fields.map { f => q"""(${f.name.toString}, manifest[${f.tpt}])""" }
-        val opsClassName = internal.reificationSupport.freshTypeName(name.toString+"Ops")
         val getters = fields.map { f =>
-          q"""def ${f.name}: Rep[${f.tpt}] = p.readField[${f.tpt}](${f.name.toString})"""
+          q"""def ${f.name}: Rep[${f.tpt}] =
+            StructOpsImpl.readField[$name, ${f.tpt}](p, ${f.name.toString})"""
         }
         val setters = fields.map { f =>
           val setter = TermName(f.name + "_$eq")
-          q"""def $setter(v: Rep[${f.tpt}]): Unit = p.writeField[${f.tpt}](${f.name.toString}, v)"""
+          q"""def $setter(v: Rep[${f.tpt}]): Unit =
+            StructOpsImpl.writeField[$name, ${f.tpt}](p, ${f.name.toString}, v)"""
         }
         val res = c.Expr(q"""
-          abstract class $name extends Struct
+          case class $name(..$fields)
           implicit val $manifestName = new RefinedManifest[$name] {
             def fields: List[(String, Manifest[_])] = List(..$fieldDecls)
             def runtimeClass = classOf[$name]
             override def name = Some(${name.toString})
           }
-          implicit class $opsClassName(p: Pointer[$name]) {
-            ..$getters
-            ..$setters
+          trait $opsTraitName extends StructOps {
+            implicit class $accessorClassName(p: Rep[$name]) {
+              ..$getters
+              ..$setters
+            }
           }
         """)
         res
@@ -85,6 +83,9 @@ trait CCodeGenStruct extends ExtendedCCodeGen {
     case n @ Node(s, "reffield_set", List(ptr, Const(field: String), v), _) =>
       shallowP(ptr, precedence("reffield_get"))
       esln"->$field = $v;"
+    case n @ Node(s, "struct_set", List(ptr, Const(field: String), v), _) =>
+      shallowP(ptr, precedence("struct_get"))
+      esln".$field = $v;"
     case n @ Node(s, "local_struct", Nil, _) =>
       val tpe = remap(typeMap.getOrElse(s, manifest[Unknown]))
       emitln(s"$tpe ${quote(s)} = { 0 };") // FIXME: uninitialized? or add it as argument?
@@ -96,6 +97,8 @@ trait CCodeGenStruct extends ExtendedCCodeGen {
       emit("&"); shallowP(v, precedence("ref_new"))
     case n @ Node(s, "reffield_get", List(ptr, Const(field: String)), _) =>
       shallowP(ptr, precedence("reffield_get")); emit("->"); emit(field)
+    case n @ Node(s, "struct_get", List(ptr, Const(field: String)), _) =>
+      shallowP(ptr, precedence("struct_get")); emit("."); emit(field)
     case n @ Node(s, "deref", List(ptr), _) =>
       es"*$ptr"
     case _ => super.shallow(n)
